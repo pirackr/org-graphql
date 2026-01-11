@@ -15,11 +15,11 @@
 - `plan.md` documents the project roadmap and open questions.
 
 ## Build, Test, and Development Commands
-- `nix develop`: enter the flake-based dev shell (GHC, cabal, tools).
+- `nix develop`: enter the flake-based dev shell (GHC, cabal, tools). Use this shell to run project commands so `stack` is available.
 - `nix-shell`: enter the legacy Nix shell with the same toolchain.
-- `stack build`: build the library and server (once `stack.yaml` is present).
-- `stack run`: start the GraphQL API locally.
-- `stack test`: run the test suite.
+- `stack build`: build the library and server (from within `nix develop`).
+- `stack run`: start the GraphQL API locally (from within `nix develop`).
+- `stack test`: run the test suite (from within `nix develop`).
 
 ## Coding Style & Naming Conventions
 - Language: Haskell.

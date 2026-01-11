@@ -17,11 +17,11 @@
             ghc
             cabal-install
             haskell-language-server
+            stack
             ormolu
             hlint
             pkg-config
             zlib
-            # optionally add stack if needed later
           ];
         };
       }

@@ -6,6 +6,7 @@ in pkgs.mkShell {
     h.ghc
     h.cabal-install
     h.haskell-language-server
+    stack
     ormolu
     hlint
     pkg-config
