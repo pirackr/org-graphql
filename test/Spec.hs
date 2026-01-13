@@ -147,6 +147,38 @@ main = hspec $ do
             content <- readFile filePath
             content `shouldBe` "* Hello\n:PROPERTIES:\n:A: 1\n:Z: 9\n:END:\n"
 
+    it "inserts headline after id via mutation" $ do
+      let query =
+            "{\"authorization\":\"Bearer secret\",\"query\":\"mutation { insertHeadlineAfter(path: \\\"mutation-insert.org\\\", afterId: \\\"one\\\", title: \\\"Inserted\\\") }\"}"
+          filePath = "test/fixtures/mutation-insert.org"
+          cleanup = do
+            exists <- doesFileExist filePath
+            when exists (removeFile filePath)
+      bracket_ cleanup cleanup $
+        bracket_ (setEnv "ORG_BACKEND_ORG_DIR" "test/fixtures") (unsetEnv "ORG_BACKEND_ORG_DIR") $
+          bracket_ (setEnv "ORG_BACKEND_TOKEN" "secret") (unsetEnv "ORG_BACKEND_TOKEN") $ do
+            writeFile filePath "* One\n* Two\n"
+            result <- GraphQL.execute (pack query)
+            unpack result `shouldBe` "{\"data\":{\"insertHeadlineAfter\":true}}"
+            content <- readFile filePath
+            content `shouldBe` "* One\n* Inserted\n* Two\n"
+
+    it "deletes headline by id via mutation" $ do
+      let query =
+            "{\"authorization\":\"Bearer secret\",\"query\":\"mutation { deleteHeadline(path: \\\"mutation-delete-headline.org\\\", id: \\\"one\\\") }\"}"
+          filePath = "test/fixtures/mutation-delete-headline.org"
+          cleanup = do
+            exists <- doesFileExist filePath
+            when exists (removeFile filePath)
+      bracket_ cleanup cleanup $
+        bracket_ (setEnv "ORG_BACKEND_ORG_DIR" "test/fixtures") (unsetEnv "ORG_BACKEND_ORG_DIR") $
+          bracket_ (setEnv "ORG_BACKEND_TOKEN" "secret") (unsetEnv "ORG_BACKEND_TOKEN") $ do
+            writeFile filePath "* One\n* Two\n"
+            result <- GraphQL.execute (pack query)
+            unpack result `shouldBe` "{\"data\":{\"deleteHeadline\":true}}"
+            content <- readFile filePath
+            content `shouldBe` "* Two\n"
+
     it "returns headline properties as json" $ do
       let query =
             "{\"query\":\"{ parseOrg(text: \\\"* Hello\\\\n:PROPERTIES:\\\\n:ID: 123\\\\n:END:\\\\n\\\") { headlines { propertiesJson } } }\"}"
