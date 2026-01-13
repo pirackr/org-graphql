@@ -55,6 +55,7 @@ import System.FilePath
 import qualified Org.Parser as OrgParser
 import qualified Org.Types as OrgTypes
 import qualified OrgBackend
+import Api.Inputs (PropertyInput (..))
 
 data Query m = Query
   { hello :: m Text
@@ -81,6 +82,7 @@ data Mutation m = Mutation
   , updateHeadlineTodo :: Arg "path" Text -> Arg "id" Text -> Arg "todo" Text -> m Bool
   , updateHeadlineTags :: Arg "path" Text -> Arg "id" Text -> Arg "tags" [Text] -> m Bool
   , updateHeadlineScheduled :: Arg "path" Text -> Arg "id" Text -> Arg "scheduled" Text -> m Bool
+  , updateHeadlineProperties :: Arg "path" Text -> Arg "id" Text -> Arg "properties" [PropertyInput] -> m Bool
   }
   deriving (Generic, GQLType)
 
@@ -160,6 +162,7 @@ rootResolver =
           , updateHeadlineTodo = updateHeadlineTodoResolver
           , updateHeadlineTags = updateHeadlineTagsResolver
           , updateHeadlineScheduled = updateHeadlineScheduledResolver
+          , updateHeadlineProperties = updateHeadlinePropertiesResolver
           }
     , subscriptionResolver = subscriptionResolver defaultRootResolver
     }
@@ -357,6 +360,28 @@ updateHeadlineScheduledResolver (Arg pathText) (Arg headlineId) (Arg newSchedule
         Left err -> fail (withPrefix ("parse error: " <> err))
         Right orgFile ->
           case updateHeadlineScheduledInFile headlineId newScheduled orgFile of
+            Left err -> fail (withPrefix err)
+            Right updated -> do
+              liftIO (TextIO.writeFile fullPath (renderOrgFile updated))
+              pure True
+
+updateHeadlinePropertiesResolver :: Arg "path" Text -> Arg "id" Text -> Arg "properties" [PropertyInput] -> ResolverM () IO Bool
+updateHeadlinePropertiesResolver (Arg pathText) (Arg headlineId) (Arg newProperties) = do
+  root <- liftIO getOrgRoot
+  path <-
+    case validatePath pathText of
+      Left err -> fail (withPrefix ("invalid path: " <> err))
+      Right ok -> pure ok
+  let fullPath = root </> path
+  exists <- liftIO (doesFileExist fullPath)
+  if not exists
+    then fail (withPrefix ("file not found: " <> Text.pack path))
+    else do
+      content <- liftIO (TextIO.readFile fullPath)
+      case OrgParser.parseOrgText content of
+        Left err -> fail (withPrefix ("parse error: " <> err))
+        Right orgFile ->
+          case updateHeadlinePropertiesInFile headlineId newProperties orgFile of
             Left err -> fail (withPrefix err)
             Right updated -> do
               liftIO (TextIO.writeFile fullPath (renderOrgFile updated))
@@ -700,6 +725,43 @@ normalizeScheduledValue :: Text -> Maybe Text
 normalizeScheduledValue raw =
   let trimmed = Text.strip raw
    in if Text.null trimmed then Nothing else Just trimmed
+
+updateHeadlinePropertiesInFile :: Text -> [PropertyInput] -> OrgTypes.OrgFile -> Either Text OrgTypes.OrgFile
+updateHeadlinePropertiesInFile targetId newProperties orgFile =
+  let props = normalizeProperties newProperties
+      (updated, updatedHeadlines) = updateHeadlinePropertiesInHeadlines targetId props (OrgTypes.orgFileHeadlines orgFile)
+   in if updated
+        then Right orgFile {OrgTypes.orgFileHeadlines = updatedHeadlines}
+        else Left ("headline not found: " <> targetId)
+
+updateHeadlinePropertiesInHeadlines :: Text -> Map.Map Text Text -> [OrgTypes.OrgHeadline] -> (Bool, [OrgTypes.OrgHeadline])
+updateHeadlinePropertiesInHeadlines targetId props =
+  foldr
+    ( \headline (updated, acc) ->
+        let (childUpdated, updatedChildren) =
+              updateHeadlinePropertiesInHeadlines targetId props (OrgTypes.headlineChildren headline)
+            isTarget = OrgTypes.headlineId headline == targetId
+            updatedHeadline =
+              if isTarget
+                then headline {OrgTypes.headlineProperties = props}
+                else headline
+            updatedWithChildren = updatedHeadline {OrgTypes.headlineChildren = updatedChildren}
+         in (updated || isTarget || childUpdated, updatedWithChildren : acc)
+    )
+    (False, [])
+
+normalizeProperties :: [PropertyInput] -> Map.Map Text Text
+normalizeProperties =
+  Map.fromList
+    . foldr
+      ( \prop acc ->
+          let key = Text.strip (name prop)
+              value = Text.strip (value prop)
+           in if Text.null key
+                then acc
+                else (key, value) : acc
+      )
+      []
 
 renderOrgFile :: OrgTypes.OrgFile -> Text
 renderOrgFile orgFile =
