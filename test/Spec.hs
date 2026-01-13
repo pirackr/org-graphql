@@ -99,6 +99,22 @@ main = hspec $ do
             content <- readFile filePath
             content `shouldBe` "* DONE Hello\n"
 
+    it "updates headline tags via mutation" $ do
+      let query =
+            "{\"authorization\":\"Bearer secret\",\"query\":\"mutation { updateHeadlineTags(path: \\\"mutation-tags.org\\\", id: \\\"hello\\\", tags: [\\\"new\\\", \\\"work\\\"]) }\"}"
+          filePath = "test/fixtures/mutation-tags.org"
+          cleanup = do
+            exists <- doesFileExist filePath
+            when exists (removeFile filePath)
+      bracket_ cleanup cleanup $
+        bracket_ (setEnv "ORG_BACKEND_ORG_DIR" "test/fixtures") (unsetEnv "ORG_BACKEND_ORG_DIR") $
+          bracket_ (setEnv "ORG_BACKEND_TOKEN" "secret") (unsetEnv "ORG_BACKEND_TOKEN") $ do
+            writeFile filePath "* Hello :old:\n"
+            result <- GraphQL.execute (pack query)
+            unpack result `shouldBe` "{\"data\":{\"updateHeadlineTags\":true}}"
+            content <- readFile filePath
+            content `shouldBe` "* Hello :new:work:\n"
+
     it "returns headline properties as json" $ do
       let query =
             "{\"query\":\"{ parseOrg(text: \\\"* Hello\\\\n:PROPERTIES:\\\\n:ID: 123\\\\n:END:\\\\n\\\") { headlines { propertiesJson } } }\"}"
