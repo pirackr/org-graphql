@@ -29,6 +29,7 @@ Errors are surfaced as GraphQL errors with the prefix `ORG_BACKEND:`.
 - `deleteOrgFile(path: String!): Boolean`: delete a file under `ORG_BACKEND_ORG_DIR` (path must be relative, no `..`).
 - `updateHeadlineTitle(path: String!, id: String!, title: String!): Boolean`: update a headline title by id and rewrite the file.
 - `updateHeadlineTodo(path: String!, id: String!, todo: String!): Boolean`: update a headline TODO keyword by id and rewrite the file.
+- `updateHeadlineTags(path: String!, id: String!, tags: [String!]!): Boolean`: update headline tags by id and rewrite the file.
 
 ### Examples
 
@@ -108,6 +109,12 @@ mutation {
 ```graphql
 mutation {
   updateHeadlineTodo(path: "notes.org", id: "hello", todo: "DONE")
+}
+```
+
+```graphql
+mutation {
+  updateHeadlineTags(path: "notes.org", id: "hello", tags: ["work", "later"])
 }
 ```
 
