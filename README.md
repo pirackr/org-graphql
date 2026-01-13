@@ -18,11 +18,11 @@ GraphQL backend for Org-mode data.
 - `hello`: basic health check
 - `parseOrg(text: String!)`: parse an Org document from input text
 - `orgFile(path: String!)`: parse a file from `ORG_BACKEND_ORG_DIR` (path must be relative, no `..`)
-- `orgFiles`: list all `.org` files under `ORG_BACKEND_ORG_DIR` (recursive, hidden paths skipped)
+- `orgFiles(recursive: Boolean = true, includeHidden: Boolean = false)`: list `.org` files under `ORG_BACKEND_ORG_DIR`
 
 Errors are surfaced as GraphQL errors with the prefix `ORG_BACKEND:`.
 
-### Example
+### Examples
 
 ```graphql
 query {
@@ -32,5 +32,19 @@ query {
       properties { key value }
     }
   }
+}
+```
+
+```graphql
+query {
+  parseOrg(text: "* TODO Hello :work:\n:PROPERTIES:\n:ID: 123\n:END:\n") {
+    headlines { title todo tags properties { key value } }
+  }
+}
+```
+
+```graphql
+query {
+  orgFiles(recursive: false, includeHidden: true)
 }
 ```

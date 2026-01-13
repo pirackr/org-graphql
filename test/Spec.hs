@@ -47,13 +47,27 @@ main = hspec $ do
       bracket_ (setEnv "ORG_BACKEND_ORG_DIR" "test/fixtures") (unsetEnv "ORG_BACKEND_ORG_DIR") $ do
         result <- GraphQL.execute (pack query)
         unpack result
-          `shouldBe` "{\"data\":{\"orgFiles\":[\"invalid.org\",\"sample.org\"]}}"
+          `shouldBe` "{\"data\":{\"orgFiles\":[\"invalid.org\",\"sample.org\",\"subdir/child.org\"]}}"
 
     it "skips hidden org files" $ do
       let query = "{\"query\":\"{ orgFiles }\"}"
       bracket_ (setEnv "ORG_BACKEND_ORG_DIR" "test/fixtures") (unsetEnv "ORG_BACKEND_ORG_DIR") $ do
         result <- GraphQL.execute (pack query)
         unpack result `shouldSatisfy` (not . isInfixOf ".hidden.org")
+
+    it "lists org files non-recursively" $ do
+      let query = "{\"query\":\"{ orgFiles(recursive: false) }\"}"
+      bracket_ (setEnv "ORG_BACKEND_ORG_DIR" "test/fixtures") (unsetEnv "ORG_BACKEND_ORG_DIR") $ do
+        result <- GraphQL.execute (pack query)
+        unpack result
+          `shouldBe` "{\"data\":{\"orgFiles\":[\"invalid.org\",\"sample.org\"]}}"
+
+    it "includes hidden org files when requested" $ do
+      let query = "{\"query\":\"{ orgFiles(recursive: false, includeHidden: true) }\"}"
+      bracket_ (setEnv "ORG_BACKEND_ORG_DIR" "test/fixtures") (unsetEnv "ORG_BACKEND_ORG_DIR") $ do
+        result <- GraphQL.execute (pack query)
+        unpack result
+          `shouldBe` "{\"data\":{\"orgFiles\":[\".hidden.org\",\"invalid.org\",\"sample.org\"]}}"
 
     it "returns GraphQL errors for parse failures" $ do
       let query = "{\"query\":\"{ orgFile(path: \\\"invalid.org\\\") { headlines { title } } }\"}"

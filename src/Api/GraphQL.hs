@@ -45,7 +45,7 @@ data Query m = Query
   { hello :: m Text
   , parseOrg :: Arg "text" Text -> m OrgFileGQL
   , orgFile :: Arg "path" Text -> m OrgFileGQL
-  , orgFiles :: m [Text]
+  , orgFiles :: Arg "recursive" (Maybe Bool) -> Arg "includeHidden" (Maybe Bool) -> m [Text]
   }
   deriving (Generic, GQLType)
 
@@ -116,14 +116,16 @@ orgFileResolver (Arg pathText) = do
         Left err -> fail (withPrefix ("parse error: " <> err))
         Right orgFile -> pure (toOrgFileGQL orgFile)
 
-orgFilesResolver :: ResolverQ () IO [Text]
-orgFilesResolver = do
+orgFilesResolver :: Arg "recursive" (Maybe Bool) -> Arg "includeHidden" (Maybe Bool) -> ResolverQ () IO [Text]
+orgFilesResolver (Arg recursiveArg) (Arg includeHiddenArg) = do
+  let recursive = fromMaybe True recursiveArg
+      includeHidden = fromMaybe False includeHiddenArg
   root <- liftIO getOrgRoot
   exists <- liftIO (doesDirectoryExist root)
   if not exists
     then fail (withPrefix ("org dir not found: " <> Text.pack root))
     else do
-      paths <- liftIO (listOrgFiles root)
+      paths <- liftIO (listOrgFiles recursive includeHidden root)
       pure (map Text.pack (sort paths))
 
 toOrgFileGQL :: OrgTypes.OrgFile -> OrgFileGQL
@@ -171,18 +173,25 @@ validatePath rawPath =
             then Right path
             else Left "path must be relative and not contain .."
 
-listOrgFiles :: FilePath -> IO [FilePath]
-listOrgFiles root = go root
+listOrgFiles :: Bool -> Bool -> FilePath -> IO [FilePath]
+listOrgFiles recursive includeHidden root = go root
   where
     go dir = do
       entries <- listDirectory dir
-      paths <- traverse (resolveEntry dir) (filter (not . isHidden) entries)
+      let visibleEntries =
+            if includeHidden
+              then entries
+              else filter (not . isHidden) entries
+      paths <- traverse (resolveEntry dir) visibleEntries
       pure (concat paths)
     resolveEntry dir entry = do
       let fullPath = dir </> entry
       isDir <- doesDirectoryExist fullPath
       if isDir
-        then go fullPath
+        then
+          if recursive
+            then go fullPath
+            else pure []
         else
           if takeExtension entry == ".org"
             then pure [makeRelative root fullPath]
