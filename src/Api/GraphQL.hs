@@ -22,7 +22,7 @@ import Data.Morpheus.Server.Types
   , Undefined
   , defaultRootResolver
   )
-import Data.Morpheus.Server.Resolvers (ResolverQ)
+import Data.Morpheus.Server.Resolvers (ResolverM, ResolverQ)
 import Data.ByteString.Lazy (ByteString)
 import qualified Data.Map.Strict as Map
 import Data.Maybe (fromMaybe)
@@ -32,12 +32,19 @@ import qualified Data.Text.IO as TextIO
 import qualified Data.Text.Lazy as TextLazy
 import qualified Data.Text.Lazy.Encoding as TextLazyEncoding
 import GHC.Generics (Generic)
-import System.Directory (doesDirectoryExist, doesFileExist, getModificationTime, listDirectory)
+import System.Directory
+  ( createDirectoryIfMissing
+  , doesDirectoryExist
+  , doesFileExist
+  , getModificationTime
+  , listDirectory
+  )
 import System.Environment (lookupEnv)
 import System.FilePath
   ( isRelative
   , makeRelative
   , splitDirectories
+  , takeDirectory
   , takeExtension
   , takeFileName
   , (</>)
@@ -62,6 +69,11 @@ data Query m = Query
       -> Arg "filterTags" (Maybe [Text])
       -> Arg "filterTodo" (Maybe Text)
       -> m OrgFilesGQL
+  }
+  deriving (Generic, GQLType)
+
+data Mutation m = Mutation
+  { writeOrgFile :: Arg "path" Text -> Arg "content" Text -> m Bool
   }
   deriving (Generic, GQLType)
 
@@ -123,7 +135,7 @@ instance FromJSON AuthExtensions where
     authExtAuthorization <- obj .:? "authorization"
     pure AuthExtensions {authExtAuthorization = authExtAuthorization}
 
-rootResolver :: RootResolver IO () Query Undefined Undefined
+rootResolver :: RootResolver IO () Query Mutation Undefined
 rootResolver =
   RootResolver
     { queryResolver =
@@ -133,7 +145,10 @@ rootResolver =
           , orgFile = orgFileResolver
           , orgFiles = orgFilesResolver
           }
-    , mutationResolver = mutationResolver defaultRootResolver
+    , mutationResolver =
+        Mutation
+          { writeOrgFile = writeOrgFileResolver
+          }
     , subscriptionResolver = subscriptionResolver defaultRootResolver
     }
 
@@ -218,7 +233,19 @@ orgFilesResolver (Arg recursiveArg) (Arg includeHiddenArg) (Arg prefixArg) (Arg 
       sorted <- liftIO (sortPaths sortBy sortDirection root contentFiltered)
       let paged = applyPagination offset limit sorted
           totalCount = length contentFiltered
-      pure (OrgFilesGQL {total = totalCount, items = map Text.pack paged})
+  pure (OrgFilesGQL {total = totalCount, items = map Text.pack paged})
+
+writeOrgFileResolver :: Arg "path" Text -> Arg "content" Text -> ResolverM () IO Bool
+writeOrgFileResolver (Arg pathText) (Arg content) = do
+  root <- liftIO getOrgRoot
+  path <-
+    case validatePath pathText of
+      Left err -> fail (withPrefix ("invalid path: " <> err))
+      Right ok -> pure ok
+  let fullPath = root </> path
+  liftIO (createDirectoryIfMissing True (takeDirectory fullPath))
+  liftIO (TextIO.writeFile fullPath content)
+  pure True
 
 toOrgFileGQL :: OrgTypes.OrgFile -> OrgFileGQL
 toOrgFileGQL orgFile =
