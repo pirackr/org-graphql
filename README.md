@@ -31,6 +31,7 @@ Errors are surfaced as GraphQL errors with the prefix `ORG_BACKEND:`.
 - `updateHeadlineTodo(path: String!, id: String!, todo: String!): Boolean`: update a headline TODO keyword by id and rewrite the file.
 - `updateHeadlineTags(path: String!, id: String!, tags: [String!]!): Boolean`: update headline tags by id and rewrite the file.
 - `updateHeadlineScheduled(path: String!, id: String!, scheduled: String!): Boolean`: update a headline scheduled timestamp by id and rewrite the file.
+- `updateHeadlineProperties(path: String!, id: String!, properties: [PropertyInput!]!): Boolean`: replace a headline's properties drawer by id and rewrite the file.
 
 ### Examples
 
@@ -122,6 +123,16 @@ mutation {
 ```graphql
 mutation {
   updateHeadlineScheduled(path: "notes.org", id: "hello", scheduled: "2024-01-02 Tue")
+}
+```
+
+```graphql
+mutation {
+  updateHeadlineProperties(
+    path: "notes.org",
+    id: "hello",
+    properties: [{name: "A", value: "1"}, {name: "Z", value: "9"}]
+  )
 }
 ```
 
