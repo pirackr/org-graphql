@@ -38,7 +38,8 @@
 - Queries: `hello`, `parseOrg(text)`, `orgFile(path)`, `orgFiles(...)`.
 - `orgFiles` supports: `recursive`, `includeHidden`, `prefix`, `offset`, `limit`, `sort` (NAME|MTIME), `sortDirection` (ASC|DESC), `filterTags`, `filterTodo`, and returns `{ total, items }`.
 - Headline properties are exposed via `propertiesJson` (JSON string).
-- Mutations: `writeOrgFile(path, content)`, `deleteOrgFile(path)`, `updateHeadlineTitle(path, id, title)`.
+- Mutations: `writeOrgFile(path, content)`, `deleteOrgFile(path)`, `updateHeadlineTitle(path, id, title)`, `updateHeadlineTodo(path, id, todo)`, `updateHeadlineTags(path, id, tags)`, `updateHeadlineScheduled(path, id, scheduled)`, `updateHeadlineProperties(path, id, properties)`, `insertHeadlineAfter(path, afterId, title)`, `deleteHeadline(path, id)`.
+  - HTTP server (warp) injects `Authorization` header into the request body before GraphQL execution.
 
 ## Commit & Pull Request Guidelines
 - Use clear, imperative summaries (e.g., “Add GraphQL schema for headlines”).
