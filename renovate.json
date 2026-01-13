@@ -1,0 +1,23 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:base"],
+  "labels": ["dependencies"],
+  "packageRules": [
+    {
+      "matchManagers": ["stack", "cabal"],
+      "groupName": "haskell dependencies"
+    },
+    {
+      "matchManagers": ["nix", "nixpkgs"],
+      "groupName": "nix dependencies"
+    },
+    {
+      "matchManagers": ["dockerfile"],
+      "groupName": "docker dependencies"
+    },
+    {
+      "matchManagers": ["github-actions"],
+      "groupName": "github actions"
+    }
+  ]
+}
