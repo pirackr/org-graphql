@@ -38,6 +38,7 @@ import System.Directory
   , doesFileExist
   , getModificationTime
   , listDirectory
+  , removeFile
   )
 import System.Environment (lookupEnv)
 import System.FilePath
@@ -74,6 +75,7 @@ data Query m = Query
 
 data Mutation m = Mutation
   { writeOrgFile :: Arg "path" Text -> Arg "content" Text -> m Bool
+  , deleteOrgFile :: Arg "path" Text -> m Bool
   }
   deriving (Generic, GQLType)
 
@@ -148,6 +150,7 @@ rootResolver =
     , mutationResolver =
         Mutation
           { writeOrgFile = writeOrgFileResolver
+          , deleteOrgFile = deleteOrgFileResolver
           }
     , subscriptionResolver = subscriptionResolver defaultRootResolver
     }
@@ -246,6 +249,21 @@ writeOrgFileResolver (Arg pathText) (Arg content) = do
   liftIO (createDirectoryIfMissing True (takeDirectory fullPath))
   liftIO (TextIO.writeFile fullPath content)
   pure True
+
+deleteOrgFileResolver :: Arg "path" Text -> ResolverM () IO Bool
+deleteOrgFileResolver (Arg pathText) = do
+  root <- liftIO getOrgRoot
+  path <-
+    case validatePath pathText of
+      Left err -> fail (withPrefix ("invalid path: " <> err))
+      Right ok -> pure ok
+  let fullPath = root </> path
+  exists <- liftIO (doesFileExist fullPath)
+  if not exists
+    then fail (withPrefix ("file not found: " <> Text.pack path))
+    else do
+      liftIO (removeFile fullPath)
+      pure True
 
 toOrgFileGQL :: OrgTypes.OrgFile -> OrgFileGQL
 toOrgFileGQL orgFile =
