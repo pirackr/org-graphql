@@ -131,6 +131,22 @@ main = hspec $ do
             content <- readFile filePath
             content `shouldBe` "* Hello\nSCHEDULED: <2024-01-02 Tue>\n"
 
+    it "updates headline properties via mutation" $ do
+      let query =
+            "{\"authorization\":\"Bearer secret\",\"query\":\"mutation { updateHeadlineProperties(path: \\\"mutation-properties.org\\\", id: \\\"hello\\\", properties: [{name: \\\"Z\\\", value: \\\"9\\\"}, {name: \\\"A\\\", value: \\\"1\\\"}]) }\"}"
+          filePath = "test/fixtures/mutation-properties.org"
+          cleanup = do
+            exists <- doesFileExist filePath
+            when exists (removeFile filePath)
+      bracket_ cleanup cleanup $
+        bracket_ (setEnv "ORG_BACKEND_ORG_DIR" "test/fixtures") (unsetEnv "ORG_BACKEND_ORG_DIR") $
+          bracket_ (setEnv "ORG_BACKEND_TOKEN" "secret") (unsetEnv "ORG_BACKEND_TOKEN") $ do
+            writeFile filePath "* Hello\n"
+            result <- GraphQL.execute (pack query)
+            unpack result `shouldBe` "{\"data\":{\"updateHeadlineProperties\":true}}"
+            content <- readFile filePath
+            content `shouldBe` "* Hello\n:PROPERTIES:\n:A: 1\n:Z: 9\n:END:\n"
+
     it "returns headline properties as json" $ do
       let query =
             "{\"query\":\"{ parseOrg(text: \\\"* Hello\\\\n:PROPERTIES:\\\\n:ID: 123\\\\n:END:\\\\n\\\") { headlines { propertiesJson } } }\"}"
