@@ -236,7 +236,7 @@ orgFilesResolver (Arg recursiveArg) (Arg includeHiddenArg) (Arg prefixArg) (Arg 
       sorted <- liftIO (sortPaths sortBy sortDirection root contentFiltered)
       let paged = applyPagination offset limit sorted
           totalCount = length contentFiltered
-  pure (OrgFilesGQL {total = totalCount, items = map Text.pack paged})
+      pure (OrgFilesGQL {total = totalCount, items = map Text.pack paged})
 
 writeOrgFileResolver :: Arg "path" Text -> Arg "content" Text -> ResolverM () IO Bool
 writeOrgFileResolver (Arg pathText) (Arg content) = do
