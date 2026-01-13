@@ -83,6 +83,8 @@ data Mutation m = Mutation
   , updateHeadlineTags :: Arg "path" Text -> Arg "id" Text -> Arg "tags" [Text] -> m Bool
   , updateHeadlineScheduled :: Arg "path" Text -> Arg "id" Text -> Arg "scheduled" Text -> m Bool
   , updateHeadlineProperties :: Arg "path" Text -> Arg "id" Text -> Arg "properties" [PropertyInput] -> m Bool
+  , insertHeadlineAfter :: Arg "path" Text -> Arg "afterId" Text -> Arg "title" Text -> m Bool
+  , deleteHeadline :: Arg "path" Text -> Arg "id" Text -> m Bool
   }
   deriving (Generic, GQLType)
 
@@ -163,6 +165,8 @@ rootResolver =
           , updateHeadlineTags = updateHeadlineTagsResolver
           , updateHeadlineScheduled = updateHeadlineScheduledResolver
           , updateHeadlineProperties = updateHeadlinePropertiesResolver
+          , insertHeadlineAfter = insertHeadlineAfterResolver
+          , deleteHeadline = deleteHeadlineResolver
           }
     , subscriptionResolver = subscriptionResolver defaultRootResolver
     }
@@ -382,6 +386,50 @@ updateHeadlinePropertiesResolver (Arg pathText) (Arg headlineId) (Arg newPropert
         Left err -> fail (withPrefix ("parse error: " <> err))
         Right orgFile ->
           case updateHeadlinePropertiesInFile headlineId newProperties orgFile of
+            Left err -> fail (withPrefix err)
+            Right updated -> do
+              liftIO (TextIO.writeFile fullPath (renderOrgFile updated))
+              pure True
+
+insertHeadlineAfterResolver :: Arg "path" Text -> Arg "afterId" Text -> Arg "title" Text -> ResolverM () IO Bool
+insertHeadlineAfterResolver (Arg pathText) (Arg afterId) (Arg newTitle) = do
+  root <- liftIO getOrgRoot
+  path <-
+    case validatePath pathText of
+      Left err -> fail (withPrefix ("invalid path: " <> err))
+      Right ok -> pure ok
+  let fullPath = root </> path
+  exists <- liftIO (doesFileExist fullPath)
+  if not exists
+    then fail (withPrefix ("file not found: " <> Text.pack path))
+    else do
+      content <- liftIO (TextIO.readFile fullPath)
+      case OrgParser.parseOrgText content of
+        Left err -> fail (withPrefix ("parse error: " <> err))
+        Right orgFile ->
+          case insertHeadlineAfterInFile afterId newTitle orgFile of
+            Left err -> fail (withPrefix err)
+            Right updated -> do
+              liftIO (TextIO.writeFile fullPath (renderOrgFile updated))
+              pure True
+
+deleteHeadlineResolver :: Arg "path" Text -> Arg "id" Text -> ResolverM () IO Bool
+deleteHeadlineResolver (Arg pathText) (Arg headlineId) = do
+  root <- liftIO getOrgRoot
+  path <-
+    case validatePath pathText of
+      Left err -> fail (withPrefix ("invalid path: " <> err))
+      Right ok -> pure ok
+  let fullPath = root </> path
+  exists <- liftIO (doesFileExist fullPath)
+  if not exists
+    then fail (withPrefix ("file not found: " <> Text.pack path))
+    else do
+      content <- liftIO (TextIO.readFile fullPath)
+      case OrgParser.parseOrgText content of
+        Left err -> fail (withPrefix ("parse error: " <> err))
+        Right orgFile ->
+          case deleteHeadlineInFile headlineId orgFile of
             Left err -> fail (withPrefix err)
             Right updated -> do
               liftIO (TextIO.writeFile fullPath (renderOrgFile updated))
@@ -762,6 +810,66 @@ normalizeProperties =
                 else (key, value) : acc
       )
       []
+
+insertHeadlineAfterInFile :: Text -> Text -> OrgTypes.OrgFile -> Either Text OrgTypes.OrgFile
+insertHeadlineAfterInFile targetId newTitle orgFile =
+  let (updated, updatedHeadlines) = insertHeadlineAfterInHeadlines targetId newTitle (OrgTypes.orgFileHeadlines orgFile)
+   in if updated
+        then Right orgFile {OrgTypes.orgFileHeadlines = updatedHeadlines}
+        else Left ("headline not found: " <> targetId)
+
+insertHeadlineAfterInHeadlines :: Text -> Text -> [OrgTypes.OrgHeadline] -> (Bool, [OrgTypes.OrgHeadline])
+insertHeadlineAfterInHeadlines targetId newTitle = go
+  where
+    go [] = (False, [])
+    go (headline : rest)
+      | OrgTypes.headlineId headline == targetId =
+          let newHeadline = newHeadlineAfter headline newTitle
+           in (True, headline : newHeadline : rest)
+      | otherwise =
+          let (childUpdated, updatedChildren) = go (OrgTypes.headlineChildren headline)
+              updatedHeadline = headline {OrgTypes.headlineChildren = updatedChildren}
+           in if childUpdated
+                then (True, updatedHeadline : rest)
+                else
+                  let (restUpdated, updatedRest) = go rest
+                   in (restUpdated, updatedHeadline : updatedRest)
+
+newHeadlineAfter :: OrgTypes.OrgHeadline -> Text -> OrgTypes.OrgHeadline
+newHeadlineAfter reference newTitle =
+  OrgTypes.OrgHeadline
+    { OrgTypes.headlineId = slugify newTitle
+    , OrgTypes.headlineLevel = OrgTypes.headlineLevel reference
+    , OrgTypes.headlineTitle = newTitle
+    , OrgTypes.headlineTodo = Nothing
+    , OrgTypes.headlineTags = []
+    , OrgTypes.headlineScheduled = Nothing
+    , OrgTypes.headlineProperties = Map.empty
+    , OrgTypes.headlineBody = []
+    , OrgTypes.headlineChildren = []
+    }
+
+deleteHeadlineInFile :: Text -> OrgTypes.OrgFile -> Either Text OrgTypes.OrgFile
+deleteHeadlineInFile targetId orgFile =
+  let (updated, updatedHeadlines) = deleteHeadlineInHeadlines targetId (OrgTypes.orgFileHeadlines orgFile)
+   in if updated
+        then Right orgFile {OrgTypes.orgFileHeadlines = updatedHeadlines}
+        else Left ("headline not found: " <> targetId)
+
+deleteHeadlineInHeadlines :: Text -> [OrgTypes.OrgHeadline] -> (Bool, [OrgTypes.OrgHeadline])
+deleteHeadlineInHeadlines targetId = go
+  where
+    go [] = (False, [])
+    go (headline : rest)
+      | OrgTypes.headlineId headline == targetId = (True, rest)
+      | otherwise =
+          let (childUpdated, updatedChildren) = go (OrgTypes.headlineChildren headline)
+              updatedHeadline = headline {OrgTypes.headlineChildren = updatedChildren}
+           in if childUpdated
+                then (True, updatedHeadline : rest)
+                else
+                  let (restUpdated, updatedRest) = go rest
+                   in (restUpdated, updatedHeadline : updatedRest)
 
 renderOrgFile :: OrgTypes.OrgFile -> Text
 renderOrgFile orgFile =
