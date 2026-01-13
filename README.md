@@ -23,6 +23,11 @@ GraphQL backend for Org-mode data.
 
 Errors are surfaced as GraphQL errors with the prefix `ORG_BACKEND:`.
 
+## GraphQL mutations
+
+- `writeOrgFile(path: String!, content: String!): Boolean`: write raw Org content to `ORG_BACKEND_ORG_DIR` (path must be relative, no `..`).
+- `deleteOrgFile(path: String!): Boolean`: delete a file under `ORG_BACKEND_ORG_DIR` (path must be relative, no `..`).
+
 ### Examples
 
 ```graphql
@@ -77,6 +82,18 @@ query {
     total
     items
   }
+}
+```
+
+```graphql
+mutation {
+  writeOrgFile(path: "notes.org", content: "* Hello\n")
+}
+```
+
+```graphql
+mutation {
+  deleteOrgFile(path: "notes.org")
 }
 ```
 
