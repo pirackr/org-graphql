@@ -4,7 +4,7 @@ module Api.HttpSpec (spec) where
 
 import Data.Aeson (Value (..), decode)
 import Data.Aeson.Key (fromText)
-import Data.Aeson.KeyMap (lookup)
+import qualified Data.Aeson.KeyMap as KeyMap
 import Data.ByteString.Lazy.Char8 (pack)
 import Test.Hspec
 
@@ -19,5 +19,5 @@ spec = do
       case decode updated of
         Nothing -> expectationFailure "expected valid JSON"
         Just (Object obj) ->
-          lookup (fromText "authorization") obj `shouldBe` Just (String "Bearer token")
+          KeyMap.lookup (fromText "authorization") obj `shouldBe` Just (String "Bearer token")
         _ -> expectationFailure "expected JSON object"
