@@ -2,12 +2,13 @@ module Main (main) where
 
 import qualified Api.GraphQL as GraphQL
 import Control.Exception (bracket_)
+import Control.Monad (when)
 import Data.ByteString.Lazy.Char8 (pack, unpack)
 import Data.List (isInfixOf)
 import Data.Time (UTCTime (..), fromGregorian, secondsToDiffTime)
 import qualified Org.ParserSpec
 import qualified OrgBackend
-import System.Directory (setModificationTime)
+import System.Directory (doesFileExist, removeFile, setModificationTime)
 import System.Environment (setEnv, unsetEnv)
 import Test.Hspec
 
@@ -34,6 +35,21 @@ main = hspec $ do
       bracket_ (setEnv "ORG_BACKEND_TOKEN" "secret") (unsetEnv "ORG_BACKEND_TOKEN") $ do
         result <- GraphQL.execute (pack query)
         unpack result `shouldBe` "{\"data\":{\"hello\":\"hello\"}}"
+
+    it "writes org files via mutation" $ do
+      let query =
+            "{\"authorization\":\"Bearer secret\",\"query\":\"mutation { writeOrgFile(path: \\\"mutation.org\\\", content: \\\"* Hello\\\\n\\\") }\"}"
+          filePath = "test/fixtures/mutation.org"
+          cleanup = do
+            exists <- doesFileExist filePath
+            when exists (removeFile filePath)
+      bracket_ cleanup cleanup $
+        bracket_ (setEnv "ORG_BACKEND_ORG_DIR" "test/fixtures") (unsetEnv "ORG_BACKEND_ORG_DIR") $
+          bracket_ (setEnv "ORG_BACKEND_TOKEN" "secret") (unsetEnv "ORG_BACKEND_TOKEN") $ do
+            result <- GraphQL.execute (pack query)
+            unpack result `shouldBe` "{\"data\":{\"writeOrgFile\":true}}"
+            content <- readFile filePath
+            content `shouldBe` "* Hello\n"
 
     it "returns headline properties as json" $ do
       let query =
