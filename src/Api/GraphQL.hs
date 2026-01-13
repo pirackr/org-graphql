@@ -78,6 +78,7 @@ data Mutation m = Mutation
   { writeOrgFile :: Arg "path" Text -> Arg "content" Text -> m Bool
   , deleteOrgFile :: Arg "path" Text -> m Bool
   , updateHeadlineTitle :: Arg "path" Text -> Arg "id" Text -> Arg "title" Text -> m Bool
+  , updateHeadlineTodo :: Arg "path" Text -> Arg "id" Text -> Arg "todo" Text -> m Bool
   }
   deriving (Generic, GQLType)
 
@@ -154,6 +155,7 @@ rootResolver =
           { writeOrgFile = writeOrgFileResolver
           , deleteOrgFile = deleteOrgFileResolver
           , updateHeadlineTitle = updateHeadlineTitleResolver
+          , updateHeadlineTodo = updateHeadlineTodoResolver
           }
     , subscriptionResolver = subscriptionResolver defaultRootResolver
     }
@@ -285,6 +287,28 @@ updateHeadlineTitleResolver (Arg pathText) (Arg headlineId) (Arg newTitle) = do
         Left err -> fail (withPrefix ("parse error: " <> err))
         Right orgFile ->
           case updateHeadlineTitleInFile headlineId newTitle orgFile of
+            Left err -> fail (withPrefix err)
+            Right updated -> do
+              liftIO (TextIO.writeFile fullPath (renderOrgFile updated))
+              pure True
+
+updateHeadlineTodoResolver :: Arg "path" Text -> Arg "id" Text -> Arg "todo" Text -> ResolverM () IO Bool
+updateHeadlineTodoResolver (Arg pathText) (Arg headlineId) (Arg newTodo) = do
+  root <- liftIO getOrgRoot
+  path <-
+    case validatePath pathText of
+      Left err -> fail (withPrefix ("invalid path: " <> err))
+      Right ok -> pure ok
+  let fullPath = root </> path
+  exists <- liftIO (doesFileExist fullPath)
+  if not exists
+    then fail (withPrefix ("file not found: " <> Text.pack path))
+    else do
+      content <- liftIO (TextIO.readFile fullPath)
+      case OrgParser.parseOrgText content of
+        Left err -> fail (withPrefix ("parse error: " <> err))
+        Right orgFile ->
+          case updateHeadlineTodoInFile headlineId newTodo orgFile of
             Left err -> fail (withPrefix err)
             Right updated -> do
               liftIO (TextIO.writeFile fullPath (renderOrgFile updated))
@@ -542,6 +566,35 @@ updateHeadlineTitleInHeadlines targetId newTitle =
          in (updated || isTarget || childUpdated, updatedWithChildren : acc)
     )
     (False, [])
+
+updateHeadlineTodoInFile :: Text -> Text -> OrgTypes.OrgFile -> Either Text OrgTypes.OrgFile
+updateHeadlineTodoInFile targetId newTodo orgFile =
+  let todoValue = normalizeTodoValue newTodo
+      (updated, updatedHeadlines) = updateHeadlineTodoInHeadlines targetId todoValue (OrgTypes.orgFileHeadlines orgFile)
+   in if updated
+        then Right orgFile {OrgTypes.orgFileHeadlines = updatedHeadlines}
+        else Left ("headline not found: " <> targetId)
+
+updateHeadlineTodoInHeadlines :: Text -> Maybe Text -> [OrgTypes.OrgHeadline] -> (Bool, [OrgTypes.OrgHeadline])
+updateHeadlineTodoInHeadlines targetId todoValue =
+  foldr
+    ( \headline (updated, acc) ->
+        let (childUpdated, updatedChildren) =
+              updateHeadlineTodoInHeadlines targetId todoValue (OrgTypes.headlineChildren headline)
+            isTarget = OrgTypes.headlineId headline == targetId
+            updatedHeadline =
+              if isTarget
+                then headline {OrgTypes.headlineTodo = todoValue}
+                else headline
+            updatedWithChildren = updatedHeadline {OrgTypes.headlineChildren = updatedChildren}
+         in (updated || isTarget || childUpdated, updatedWithChildren : acc)
+    )
+    (False, [])
+
+normalizeTodoValue :: Text -> Maybe Text
+normalizeTodoValue raw =
+  let trimmed = Text.strip raw
+   in if Text.null trimmed then Nothing else Just trimmed
 
 renderOrgFile :: OrgTypes.OrgFile -> Text
 renderOrgFile orgFile =
