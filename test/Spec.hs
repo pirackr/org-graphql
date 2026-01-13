@@ -83,6 +83,20 @@ main = hspec $ do
             content <- readFile filePath
             content `shouldBe` "* Updated\n"
 
+    it "returns errors when headline id is missing for mutation" $ do
+      let query =
+            "{\"authorization\":\"Bearer secret\",\"query\":\"mutation { updateHeadlineTitle(path: \\\"mutation-headline-missing.org\\\", id: \\\"missing\\\", title: \\\"Updated\\\") }\"}"
+          filePath = "test/fixtures/mutation-headline-missing.org"
+          cleanup = do
+            exists <- doesFileExist filePath
+            when exists (removeFile filePath)
+      bracket_ cleanup cleanup $
+        bracket_ (setEnv "ORG_BACKEND_ORG_DIR" "test/fixtures") (unsetEnv "ORG_BACKEND_ORG_DIR") $
+          bracket_ (setEnv "ORG_BACKEND_TOKEN" "secret") (unsetEnv "ORG_BACKEND_TOKEN") $ do
+            writeFile filePath "* Hello\n"
+            result <- GraphQL.execute (pack query)
+            unpack result `shouldSatisfy` isInfixOf "ORG_BACKEND: headline not found:"
+
     it "updates headline todo via mutation" $ do
       let query =
             "{\"authorization\":\"Bearer secret\",\"query\":\"mutation { updateHeadlineTodo(path: \\\"mutation-todo.org\\\", id: \\\"hello\\\", todo: \\\"DONE\\\") }\"}"
