@@ -51,6 +51,22 @@ main = hspec $ do
             content <- readFile filePath
             content `shouldBe` "* Hello\n"
 
+    it "deletes org files via mutation" $ do
+      let query =
+            "{\"authorization\":\"Bearer secret\",\"query\":\"mutation { deleteOrgFile(path: \\\"mutation-delete.org\\\") }\"}"
+          filePath = "test/fixtures/mutation-delete.org"
+          cleanup = do
+            exists <- doesFileExist filePath
+            when exists (removeFile filePath)
+      bracket_ cleanup cleanup $
+        bracket_ (setEnv "ORG_BACKEND_ORG_DIR" "test/fixtures") (unsetEnv "ORG_BACKEND_ORG_DIR") $
+          bracket_ (setEnv "ORG_BACKEND_TOKEN" "secret") (unsetEnv "ORG_BACKEND_TOKEN") $ do
+            writeFile filePath "* Delete\n"
+            result <- GraphQL.execute (pack query)
+            unpack result `shouldBe` "{\"data\":{\"deleteOrgFile\":true}}"
+            exists <- doesFileExist filePath
+            exists `shouldBe` False
+
     it "returns headline properties as json" $ do
       let query =
             "{\"query\":\"{ parseOrg(text: \\\"* Hello\\\\n:PROPERTIES:\\\\n:ID: 123\\\\n:END:\\\\n\\\") { headlines { propertiesJson } } }\"}"
