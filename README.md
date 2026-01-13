@@ -1,4 +1,4 @@
-# org-backend
+# org-graphql
 
 GraphQL backend for Org-mode data.
 
