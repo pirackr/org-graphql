@@ -8,8 +8,11 @@ module Api.GraphQL (execute) where
 
 import Prelude hiding (id)
 
+import Control.Monad (foldM)
 import Control.Monad.IO.Class (liftIO)
-import Data.List (sort)
+import Data.Aeson (encode)
+import Data.List (isPrefixOf, isSuffixOf, sort, sortOn)
+import Data.Ord (Down (..))
 import Data.Morpheus.Server (App, deriveApp, runApp)
 import Data.Morpheus.Server.Types
   ( Arg (..)
@@ -25,8 +28,10 @@ import Data.Maybe (fromMaybe)
 import Data.Text (Text, pack)
 import qualified Data.Text as Text
 import qualified Data.Text.IO as TextIO
+import qualified Data.Text.Lazy as TextLazy
+import qualified Data.Text.Lazy.Encoding as TextLazyEncoding
 import GHC.Generics (Generic)
-import System.Directory (doesDirectoryExist, doesFileExist, listDirectory)
+import System.Directory (doesDirectoryExist, doesFileExist, getModificationTime, listDirectory)
 import System.Environment (lookupEnv)
 import System.FilePath
   ( isRelative
@@ -45,7 +50,17 @@ data Query m = Query
   { hello :: m Text
   , parseOrg :: Arg "text" Text -> m OrgFileGQL
   , orgFile :: Arg "path" Text -> m OrgFileGQL
-  , orgFiles :: Arg "recursive" (Maybe Bool) -> Arg "includeHidden" (Maybe Bool) -> m [Text]
+  , orgFiles ::
+      Arg "recursive" (Maybe Bool)
+      -> Arg "includeHidden" (Maybe Bool)
+      -> Arg "prefix" (Maybe Text)
+      -> Arg "offset" (Maybe Int)
+      -> Arg "limit" (Maybe Int)
+      -> Arg "sort" (Maybe OrgFilesSort)
+      -> Arg "sortDirection" (Maybe SortDirection)
+      -> Arg "filterTags" (Maybe [Text])
+      -> Arg "filterTodo" (Maybe Text)
+      -> m OrgFilesGQL
   }
   deriving (Generic, GQLType)
 
@@ -54,6 +69,22 @@ newtype OrgFileGQL = OrgFileGQL
   }
   deriving (Generic, GQLType)
 
+data OrgFilesGQL = OrgFilesGQL
+  { total :: Int
+  , items :: [Text]
+  }
+  deriving (Generic, GQLType)
+
+data OrgFilesSort
+  = NAME
+  | MTIME
+  deriving (Generic, GQLType, Eq, Show)
+
+data SortDirection
+  = ASC
+  | DESC
+  deriving (Generic, GQLType, Eq, Show)
+
 data HeadlineGQL = HeadlineGQL
   { id :: Text
   , level :: Int
@@ -61,17 +92,13 @@ data HeadlineGQL = HeadlineGQL
   , todo :: Maybe Text
   , tags :: [Text]
   , scheduled :: Maybe Text
-  , properties :: [PropertyGQL]
+  , propertiesJson :: Text
   , body :: [Text]
   , children :: [HeadlineGQL]
   }
-  deriving (Generic, GQLType)
+  deriving (Generic)
 
-data PropertyGQL = PropertyGQL
-  { key :: Text
-  , value :: Text
-  }
-  deriving (Generic, GQLType)
+instance GQLType HeadlineGQL
 
 rootResolver :: RootResolver IO () Query Undefined Undefined
 rootResolver =
@@ -116,17 +143,49 @@ orgFileResolver (Arg pathText) = do
         Left err -> fail (withPrefix ("parse error: " <> err))
         Right orgFile -> pure (toOrgFileGQL orgFile)
 
-orgFilesResolver :: Arg "recursive" (Maybe Bool) -> Arg "includeHidden" (Maybe Bool) -> ResolverQ () IO [Text]
-orgFilesResolver (Arg recursiveArg) (Arg includeHiddenArg) = do
+orgFilesResolver ::
+  Arg "recursive" (Maybe Bool)
+  -> Arg "includeHidden" (Maybe Bool)
+  -> Arg "prefix" (Maybe Text)
+  -> Arg "offset" (Maybe Int)
+  -> Arg "limit" (Maybe Int)
+  -> Arg "sort" (Maybe OrgFilesSort)
+  -> Arg "sortDirection" (Maybe SortDirection)
+  -> Arg "filterTags" (Maybe [Text])
+  -> Arg "filterTodo" (Maybe Text)
+  -> ResolverQ () IO OrgFilesGQL
+orgFilesResolver (Arg recursiveArg) (Arg includeHiddenArg) (Arg prefixArg) (Arg offsetArg) (Arg limitArg) (Arg sortArg) (Arg sortDirectionArg) (Arg filterTagsArg) (Arg filterTodoArg) = do
   let recursive = fromMaybe True recursiveArg
       includeHidden = fromMaybe False includeHiddenArg
+      offset = max 0 (fromMaybe 0 offsetArg)
+      limit = normalizeLimit limitArg
+      sortBy = fromMaybe NAME sortArg
+      sortDirection = fromMaybe ASC sortDirectionArg
+      filterTags = normalizeTags filterTagsArg
+      filterTodo = normalizeTodo filterTodoArg
+  prefix <-
+    case validatePrefix (normalizePrefix prefixArg) of
+      Left err -> fail (withPrefix ("invalid prefix: " <> err))
+      Right ok -> pure ok
   root <- liftIO getOrgRoot
   exists <- liftIO (doesDirectoryExist root)
   if not exists
     then fail (withPrefix ("org dir not found: " <> Text.pack root))
     else do
       paths <- liftIO (listOrgFiles recursive includeHidden root)
-      pure (map Text.pack (sort paths))
+      let prefixFiltered = filter (matchesPrefix prefix) paths
+      contentFiltered <-
+        if needsContentFilter filterTags filterTodo
+          then do
+            result <- liftIO (filterPathsByContent root prefixFiltered filterTags filterTodo)
+            case result of
+              Left err -> fail (withPrefix err)
+              Right ok -> pure ok
+          else pure prefixFiltered
+      sorted <- liftIO (sortPaths sortBy sortDirection root contentFiltered)
+      let paged = applyPagination offset limit sorted
+          totalCount = length contentFiltered
+      pure (OrgFilesGQL {total = totalCount, items = map Text.pack paged})
 
 toOrgFileGQL :: OrgTypes.OrgFile -> OrgFileGQL
 toOrgFileGQL orgFile =
@@ -143,17 +202,16 @@ toHeadlineGQL headline =
     , todo = OrgTypes.headlineTodo headline
     , tags = OrgTypes.headlineTags headline
     , scheduled = OrgTypes.headlineScheduled headline
-    , properties = map toPropertyGQL (Map.toList (OrgTypes.headlineProperties headline))
+    , propertiesJson = propertiesToJson (OrgTypes.headlineProperties headline)
     , body = OrgTypes.headlineBody headline
     , children = map toHeadlineGQL (OrgTypes.headlineChildren headline)
     }
 
-toPropertyGQL :: (Text, Text) -> PropertyGQL
-toPropertyGQL (propKey, propValue) =
-  PropertyGQL
-    { key = propKey
-    , value = propValue
-    }
+propertiesToJson :: Map.Map Text Text -> Text
+propertiesToJson props =
+  if Map.null props
+    then "{}"
+    else TextLazy.toStrict (TextLazyEncoding.decodeUtf8 (encode props))
 
 withPrefix :: Text -> String
 withPrefix message = Text.unpack ("ORG_BACKEND: " <> message)
@@ -200,3 +258,133 @@ listOrgFiles recursive includeHidden root = go root
       case takeFileName entry of
         '.' : _ -> True
         _ -> False
+
+normalizeTags :: Maybe [Text] -> Maybe [Text]
+normalizeTags maybeTags =
+  case maybeTags of
+    Nothing -> Nothing
+    Just tags ->
+      let cleaned = filter (not . Text.null) (map Text.strip tags)
+       in if null cleaned then Nothing else Just cleaned
+
+normalizeTodo :: Maybe Text -> Maybe Text
+normalizeTodo maybeTodo =
+  case maybeTodo of
+    Nothing -> Nothing
+    Just raw ->
+      let trimmed = Text.strip raw
+       in if Text.null trimmed then Nothing else Just trimmed
+
+needsContentFilter :: Maybe [Text] -> Maybe Text -> Bool
+needsContentFilter maybeTags maybeTodo =
+  case (maybeTags, maybeTodo) of
+    (Nothing, Nothing) -> False
+    _ -> True
+
+filterPathsByContent :: FilePath -> [FilePath] -> Maybe [Text] -> Maybe Text -> IO (Either Text [FilePath])
+filterPathsByContent root paths maybeTags maybeTodo = do
+  result <- foldM step (Right []) paths
+  pure (fmap reverse result)
+  where
+    step acc path =
+      case acc of
+        Left err -> pure (Left err)
+        Right matches -> do
+          content <- TextIO.readFile (root </> path)
+          case OrgParser.parseOrgText content of
+            Left _ -> pure (Right matches)
+            Right orgFile ->
+              if fileMatchesFilters maybeTags maybeTodo orgFile
+                then pure (Right (path : matches))
+                else pure (Right matches)
+
+fileMatchesFilters :: Maybe [Text] -> Maybe Text -> OrgTypes.OrgFile -> Bool
+fileMatchesFilters maybeTags maybeTodo orgFile =
+  let headlines = OrgTypes.orgFileHeadlines orgFile
+   in anyHeadline (headlineMatchesFilters maybeTags maybeTodo) headlines
+
+anyHeadline :: (OrgTypes.OrgHeadline -> Bool) -> [OrgTypes.OrgHeadline] -> Bool
+anyHeadline predicate headlines =
+  any
+    ( \headline ->
+        predicate headline || anyHeadline predicate (OrgTypes.headlineChildren headline)
+    )
+    headlines
+
+headlineMatchesFilters :: Maybe [Text] -> Maybe Text -> OrgTypes.OrgHeadline -> Bool
+headlineMatchesFilters maybeTags maybeTodo headline =
+  tagsMatch maybeTags headline && todoMatch maybeTodo headline
+  where
+    tagsMatch tagsFilter h =
+      case tagsFilter of
+        Nothing -> True
+        Just requiredTags -> all (`elem` OrgTypes.headlineTags h) requiredTags
+    todoMatch todoFilter h =
+      case todoFilter of
+        Nothing -> True
+        Just requiredTodo -> OrgTypes.headlineTodo h == Just requiredTodo
+
+normalizePrefix :: Maybe Text -> Maybe FilePath
+normalizePrefix maybePrefix =
+  case maybePrefix of
+    Nothing -> Nothing
+    Just raw ->
+      let trimmed = Text.unpack (Text.strip raw)
+       in if null trimmed
+            then Nothing
+            else Just trimmed
+
+validatePrefix :: Maybe FilePath -> Either Text (Maybe FilePath)
+validatePrefix maybePrefix =
+  case maybePrefix of
+    Nothing -> Right Nothing
+    Just prefix ->
+      if isRelative prefix && not (".." `elem` splitDirectories prefix)
+        then Right (Just prefix)
+        else Left "prefix must be relative and not contain .."
+
+matchesPrefix :: Maybe FilePath -> FilePath -> Bool
+matchesPrefix maybePrefix path =
+  case maybePrefix of
+    Nothing -> True
+    Just prefix ->
+      if "/" `isSuffixOf` prefix
+        then prefix `isPrefixOf` path
+        else path == prefix || (prefix <> "/") `isPrefixOf` path
+
+normalizeLimit :: Maybe Int -> Maybe Int
+normalizeLimit maybeLimit =
+  case maybeLimit of
+    Nothing -> Nothing
+    Just n ->
+      if n <= 0
+        then Nothing
+        else Just n
+
+applyPagination :: Int -> Maybe Int -> [a] -> [a]
+applyPagination offset maybeLimit =
+  let dropped = drop offset
+   in case maybeLimit of
+        Nothing -> dropped
+        Just limit -> take limit . dropped
+
+sortPaths :: OrgFilesSort -> SortDirection -> FilePath -> [FilePath] -> IO [FilePath]
+sortPaths sortBy sortDirection root paths = do
+  let applyDirection :: [a] -> [a]
+      applyDirection =
+        case sortDirection of
+          ASC -> \xs -> xs
+          DESC -> reverse
+  case sortBy of
+    NAME -> pure (applyDirection (sort paths))
+    MTIME -> do
+      withTimes <-
+        traverse
+          ( \path -> do
+              time <- getModificationTime (root </> path)
+              pure (path, time)
+          )
+          paths
+      let sorted = sortOn (Down . snd) withTimes
+          ordered = map fst sorted
+      pure (applyDirection ordered)
