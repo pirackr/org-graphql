@@ -1,10 +1,9 @@
 # Repository Guidelines
 
-## General guidelines 
-- Break it down to atomic level of detailed ## General guidelines 
-- Follow TDD/BDD strictly, red-green-refactor cycle. Write minimal test just failed and minimal code just passed only - don't try to write test to cover everything from beginning.
-
-- Follow TDD/BDD strictly, red-green-refactor cycle. Write minimal test just failed and minimal code just passed only - don't try to write test to cover everything from beginning.
+## General guidelines
+- Break work down into atomic steps.
+- Follow TDD/BDD strictly (red-green-refactor). Write the minimal failing test, then minimal passing code, then refactor.
+- Commit after each atomic step; keep commits small and sequential.
 
 ## Project Structure & Module Organization
 - `app/` holds the executable entry point (GraphQL server).
@@ -35,11 +34,17 @@
 - Focus on parser correctness, headline IDs, and GraphQL resolver behavior.
 - Run tests with `stack test`; keep fixtures in `test/fixtures/` if added.
 
+## Current GraphQL surface
+- Queries: `hello`, `parseOrg(text)`, `orgFile(path)`, `orgFiles(...)`.
+- `orgFiles` supports: `recursive`, `includeHidden`, `prefix`, `offset`, `limit`, `sort` (NAME|MTIME), `sortDirection` (ASC|DESC), `filterTags`, `filterTodo`, and returns `{ total, items }`.
+- Headline properties are exposed via `propertiesJson` (JSON string).
+- Mutations: `writeOrgFile(path, content)`, `deleteOrgFile(path)`, `updateHeadlineTitle(path, id, title)`.
+
 ## Commit & Pull Request Guidelines
-- No commit history yet, so no established convention.
 - Use clear, imperative summaries (e.g., “Add GraphQL schema for headlines”).
 - PRs should include: scope summary, testing performed, and any config changes.
 
 ## Security & Configuration Tips
 - Prefer environment variables for auth tokens (e.g., `ORG_BACKEND_TOKEN`).
+- When `ORG_BACKEND_TOKEN` is set, every GraphQL request must include an auth token (Bearer or raw token in the JSON body).
 - Keep `org/` data local; avoid committing sensitive files.
