@@ -12,6 +12,7 @@ import Control.Applicative ((<|>))
 import Control.Monad (foldM)
 import Control.Monad.IO.Class (liftIO)
 import Data.Aeson (FromJSON (..), encode, eitherDecode, object, withObject, (.:?), (.=))
+import Data.Char (isAlphaNum)
 import Data.List (isPrefixOf, isSuffixOf, sort, sortOn)
 import Data.Ord (Down (..))
 import Data.Morpheus.Server (App, deriveApp, runApp)
@@ -76,6 +77,7 @@ data Query m = Query
 data Mutation m = Mutation
   { writeOrgFile :: Arg "path" Text -> Arg "content" Text -> m Bool
   , deleteOrgFile :: Arg "path" Text -> m Bool
+  , updateHeadlineTitle :: Arg "path" Text -> Arg "id" Text -> Arg "title" Text -> m Bool
   }
   deriving (Generic, GQLType)
 
@@ -151,6 +153,7 @@ rootResolver =
         Mutation
           { writeOrgFile = writeOrgFileResolver
           , deleteOrgFile = deleteOrgFileResolver
+          , updateHeadlineTitle = updateHeadlineTitleResolver
           }
     , subscriptionResolver = subscriptionResolver defaultRootResolver
     }
@@ -264,6 +267,28 @@ deleteOrgFileResolver (Arg pathText) = do
     else do
       liftIO (removeFile fullPath)
       pure True
+
+updateHeadlineTitleResolver :: Arg "path" Text -> Arg "id" Text -> Arg "title" Text -> ResolverM () IO Bool
+updateHeadlineTitleResolver (Arg pathText) (Arg headlineId) (Arg newTitle) = do
+  root <- liftIO getOrgRoot
+  path <-
+    case validatePath pathText of
+      Left err -> fail (withPrefix ("invalid path: " <> err))
+      Right ok -> pure ok
+  let fullPath = root </> path
+  exists <- liftIO (doesFileExist fullPath)
+  if not exists
+    then fail (withPrefix ("file not found: " <> Text.pack path))
+    else do
+      content <- liftIO (TextIO.readFile fullPath)
+      case OrgParser.parseOrgText content of
+        Left err -> fail (withPrefix ("parse error: " <> err))
+        Right orgFile ->
+          case updateHeadlineTitleInFile headlineId newTitle orgFile of
+            Left err -> fail (withPrefix err)
+            Right updated -> do
+              liftIO (TextIO.writeFile fullPath (renderOrgFile updated))
+              pure True
 
 toOrgFileGQL :: OrgTypes.OrgFile -> OrgFileGQL
 toOrgFileGQL orgFile =
@@ -490,3 +515,76 @@ sortPaths sortBy sortDirection root paths = do
       let sorted = sortOn (Down . snd) withTimes
           ordered = map fst sorted
       pure (applyDirection ordered)
+
+updateHeadlineTitleInFile :: Text -> Text -> OrgTypes.OrgFile -> Either Text OrgTypes.OrgFile
+updateHeadlineTitleInFile targetId newTitle orgFile =
+  let (updated, updatedHeadlines) = updateHeadlineTitleInHeadlines targetId newTitle (OrgTypes.orgFileHeadlines orgFile)
+   in if updated
+        then Right orgFile {OrgTypes.orgFileHeadlines = updatedHeadlines}
+        else Left ("headline not found: " <> targetId)
+
+updateHeadlineTitleInHeadlines :: Text -> Text -> [OrgTypes.OrgHeadline] -> (Bool, [OrgTypes.OrgHeadline])
+updateHeadlineTitleInHeadlines targetId newTitle =
+  foldr
+    ( \headline (updated, acc) ->
+        let (childUpdated, updatedChildren) =
+              updateHeadlineTitleInHeadlines targetId newTitle (OrgTypes.headlineChildren headline)
+            isTarget = OrgTypes.headlineId headline == targetId
+            updatedHeadline =
+              if isTarget
+                then
+                  headline
+                    { OrgTypes.headlineId = slugify newTitle
+                    , OrgTypes.headlineTitle = newTitle
+                    }
+                else headline
+            updatedWithChildren = updatedHeadline {OrgTypes.headlineChildren = updatedChildren}
+         in (updated || isTarget || childUpdated, updatedWithChildren : acc)
+    )
+    (False, [])
+
+renderOrgFile :: OrgTypes.OrgFile -> Text
+renderOrgFile orgFile =
+  let lines = concatMap renderHeadline (OrgTypes.orgFileHeadlines orgFile)
+   in Text.unlines lines
+
+renderHeadline :: OrgTypes.OrgHeadline -> [Text]
+renderHeadline headline =
+  let headlineLine = renderHeadlineLine headline
+      scheduledLine =
+        case OrgTypes.headlineScheduled headline of
+          Nothing -> []
+          Just timestamp -> ["SCHEDULED: <" <> timestamp <> ">"]
+      propertyLines = renderProperties (OrgTypes.headlineProperties headline)
+      bodyLines = OrgTypes.headlineBody headline
+      childLines = concatMap renderHeadline (OrgTypes.headlineChildren headline)
+   in headlineLine : scheduledLine ++ propertyLines ++ bodyLines ++ childLines
+
+renderHeadlineLine :: OrgTypes.OrgHeadline -> Text
+renderHeadlineLine headline =
+  let stars = Text.replicate (OrgTypes.headlineLevel headline) "*"
+      todoPart =
+        case OrgTypes.headlineTodo headline of
+          Nothing -> ""
+          Just todo -> todo <> " "
+      tagsPart =
+        case OrgTypes.headlineTags headline of
+          [] -> ""
+          tags -> " :" <> Text.intercalate ":" tags <> ":"
+   in stars <> " " <> todoPart <> OrgTypes.headlineTitle headline <> tagsPart
+
+renderProperties :: Map.Map Text Text -> [Text]
+renderProperties props =
+  if Map.null props
+    then []
+    else
+      let lines = map (\(key, value) -> ":" <> key <> ": " <> value) (Map.toList props)
+       in ":PROPERTIES:" : lines ++ [":END:"]
+
+slugify :: Text -> Text
+slugify = Text.dropAround (== '-') . Text.concatMap toSlugChar . Text.toLower
+  where
+    toSlugChar c
+      | isAlphaNum c = Text.singleton c
+      | c == ' ' = "-"
+      | otherwise = ""
