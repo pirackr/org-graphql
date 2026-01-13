@@ -13,6 +13,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /usr/share/swift
+
       - name: Set up Haskell
         uses: haskell/actions/setup@v2
         with:
@@ -36,6 +40,7 @@ jobs:
             libgmp-dev \
             pkg-config \
             zlib1g-dev
+          sudo rm -rf /var/lib/apt/lists/*
 
       - name: Build dependencies
         run: stack --no-nix build --only-dependencies --no-terminal
