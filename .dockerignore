@@ -1,0 +1,10 @@
+.git
+.github
+.stack
+.stack-work
+dist-newstyle
+org
+*.swp
+*.swo
+*.tmp
+.DS_Store
