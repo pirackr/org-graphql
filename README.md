@@ -12,6 +12,7 @@ GraphQL backend for Org-mode data.
 ## Configuration
 
 - `ORG_BACKEND_ORG_DIR`: directory containing `.org` files. Defaults to `org/`.
+- `ORG_BACKEND_TOKEN`: if set, every GraphQL request must include an auth token.
 
 ## GraphQL queries
 
@@ -83,3 +84,13 @@ Notes:
 - `prefix: "subdir"` matches files under `subdir/`.
 - `sort: MTIME` orders newest first by default, `sortDirection` can flip it.
 - `filterTags`/`filterTodo` skip files that fail to parse.
+- When `ORG_BACKEND_TOKEN` is set, include `"authorization": "Bearer <token>"` (or the raw token) in the JSON request body, or `"extensions": { "authorization": "Bearer <token>" }`.
+
+Example authenticated request payload:
+
+```json
+{
+  "authorization": "Bearer my-token",
+  "query": "{ hello }"
+}
+```

@@ -8,9 +8,10 @@ module Api.GraphQL (execute) where
 
 import Prelude hiding (id)
 
+import Control.Applicative ((<|>))
 import Control.Monad (foldM)
 import Control.Monad.IO.Class (liftIO)
-import Data.Aeson (encode)
+import Data.Aeson (FromJSON (..), encode, eitherDecode, object, withObject, (.:?), (.=))
 import Data.List (isPrefixOf, isSuffixOf, sort, sortOn)
 import Data.Ord (Down (..))
 import Data.Morpheus.Server (App, deriveApp, runApp)
@@ -100,6 +101,28 @@ data HeadlineGQL = HeadlineGQL
 
 instance GQLType HeadlineGQL
 
+data AuthEnvelope = AuthEnvelope
+  { authAuthorization :: Maybe Text
+  , authExtensions :: Maybe AuthExtensions
+  }
+  deriving (Generic)
+
+newtype AuthExtensions = AuthExtensions
+  { authExtAuthorization :: Maybe Text
+  }
+  deriving (Generic)
+
+instance FromJSON AuthEnvelope where
+  parseJSON = withObject "AuthEnvelope" $ \obj -> do
+    authAuthorization <- obj .:? "authorization"
+    authExtensions <- obj .:? "extensions"
+    pure AuthEnvelope {authAuthorization = authAuthorization, authExtensions = authExtensions}
+
+instance FromJSON AuthExtensions where
+  parseJSON = withObject "AuthExtensions" $ \obj -> do
+    authExtAuthorization <- obj .:? "authorization"
+    pure AuthExtensions {authExtAuthorization = authExtAuthorization}
+
 rootResolver :: RootResolver IO () Query Undefined Undefined
 rootResolver =
   RootResolver
@@ -118,7 +141,17 @@ api :: App () IO
 api = deriveApp rootResolver
 
 execute :: ByteString -> IO ByteString
-execute = runApp api
+execute input = do
+  requiredToken <- lookupEnv "ORG_BACKEND_TOKEN"
+  case requiredToken of
+    Nothing -> runApp api input
+    Just rawToken ->
+      if null rawToken
+        then runApp api input
+        else
+          if isAuthorized (Text.pack rawToken) input
+            then runApp api input
+            else pure unauthorizedResponse
 
 parseOrgResolver :: Arg "text" Text -> ResolverQ () IO OrgFileGQL
 parseOrgResolver (Arg input) =
@@ -212,6 +245,30 @@ propertiesToJson props =
   if Map.null props
     then "{}"
     else TextLazy.toStrict (TextLazyEncoding.decodeUtf8 (encode props))
+
+isAuthorized :: Text -> ByteString -> Bool
+isAuthorized requiredToken input =
+  case eitherDecode input of
+    Left _ -> False
+    Right envelope ->
+      case extractAuthorization envelope of
+        Nothing -> False
+        Just provided -> matchesToken requiredToken provided
+
+extractAuthorization :: AuthEnvelope -> Maybe Text
+extractAuthorization envelope =
+  authAuthorization envelope <|> (authExtensions envelope >>= authExtAuthorization)
+
+matchesToken :: Text -> Text -> Bool
+matchesToken requiredToken providedRaw =
+  let trimmed = Text.strip providedRaw
+   in case Text.stripPrefix "Bearer " trimmed of
+        Just bearerToken -> Text.strip bearerToken == requiredToken
+        Nothing -> trimmed == requiredToken
+
+unauthorizedResponse :: ByteString
+unauthorizedResponse =
+  encode $ object ["errors" .= [object ["message" .= ("ORG_BACKEND: unauthorized" :: Text)]]]
 
 withPrefix :: Text -> String
 withPrefix message = Text.unpack ("ORG_BACKEND: " <> message)

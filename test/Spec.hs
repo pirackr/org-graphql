@@ -23,6 +23,18 @@ main = hspec $ do
       result <- GraphQL.execute (pack "{\"query\":\"{ hello }\"}")
       unpack result `shouldBe` "{\"data\":{\"hello\":\"hello\"}}"
 
+    it "rejects requests without auth when ORG_BACKEND_TOKEN is set" $ do
+      let query = "{\"query\":\"{ hello }\"}"
+      bracket_ (setEnv "ORG_BACKEND_TOKEN" "secret") (unsetEnv "ORG_BACKEND_TOKEN") $ do
+        result <- GraphQL.execute (pack query)
+        unpack result `shouldSatisfy` isInfixOf "ORG_BACKEND: unauthorized"
+
+    it "accepts requests with a valid bearer token" $ do
+      let query = "{\"authorization\":\"Bearer secret\",\"query\":\"{ hello }\"}"
+      bracket_ (setEnv "ORG_BACKEND_TOKEN" "secret") (unsetEnv "ORG_BACKEND_TOKEN") $ do
+        result <- GraphQL.execute (pack query)
+        unpack result `shouldBe` "{\"data\":{\"hello\":\"hello\"}}"
+
     it "returns headline properties as json" $ do
       let query =
             "{\"query\":\"{ parseOrg(text: \\\"* Hello\\\\n:PROPERTIES:\\\\n:ID: 123\\\\n:END:\\\\n\\\") { headlines { propertiesJson } } }\"}"
