@@ -8,7 +8,7 @@ import Data.ByteString.Lazy.Char8 (pack, unpack)
 import Data.List (isInfixOf)
 import Data.Time (UTCTime (..), fromGregorian, secondsToDiffTime)
 import qualified Org.ParserSpec
-import qualified OrgBackend
+import qualified OrgGraphql
 import System.Directory (doesFileExist, removeFile, setModificationTime)
 import System.Environment (setEnv, unsetEnv)
 import Test.Hspec
@@ -17,9 +17,9 @@ main :: IO ()
 main = hspec $ do
   Org.ParserSpec.spec
   Api.HttpSpec.spec
-  describe "OrgBackend.hello" $ do
+  describe "OrgGraphql.hello" $ do
     it "returns a greeting" $ do
-      OrgBackend.hello `shouldBe` "hello"
+      OrgGraphql.hello `shouldBe` "hello"
 
   describe "GraphQL" $ do
     it "returns hello field" $ do

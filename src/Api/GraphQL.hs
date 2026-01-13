@@ -54,7 +54,7 @@ import System.FilePath
 
 import qualified Org.Parser as OrgParser
 import qualified Org.Types as OrgTypes
-import qualified OrgBackend
+import qualified OrgGraphql
 import Api.Inputs (PropertyInput (..))
 
 data Query m = Query
@@ -151,7 +151,7 @@ rootResolver =
   RootResolver
     { queryResolver =
         Query
-          { hello = pure (pack OrgBackend.hello)
+          { hello = pure (pack OrgGraphql.hello)
           , parseOrg = parseOrgResolver
           , orgFile = orgFileResolver
           , orgFiles = orgFilesResolver

@@ -6,7 +6,7 @@ license:            NONE
 build-type:         Simple
 
 library
-  exposed-modules:  OrgBackend,
+  exposed-modules:  OrgGraphql,
                     Api.GraphQL,
                     Api.Http,
                     Api.Inputs,
