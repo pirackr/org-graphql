@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      STACK_NO_NIX: 1
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /usr/share/swift
+
+      - name: Set up Haskell
+        uses: haskell/actions/setup@v2
+        with:
+          enable-stack: true
+          stack-version: "latest"
+
+      - name: Cache Stack
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.stack
+            .stack-work
+          key: ${{ runner.os }}-stack-${{ hashFiles('stack.yaml.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-stack-
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libgmp-dev \
+            pkg-config \
+            zlib1g-dev
+          sudo rm -rf /var/lib/apt/lists/*
+
+      - name: Build dependencies
+        run: stack --no-nix build --only-dependencies --no-terminal
+
+      - name: Run tests
+        run: stack --no-nix test --no-terminal
