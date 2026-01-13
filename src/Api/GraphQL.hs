@@ -804,10 +804,10 @@ normalizeProperties =
     . foldr
       ( \prop acc ->
           let key = Text.strip (name prop)
-              value = Text.strip (value prop)
+              propValue = Text.strip (value prop)
            in if Text.null key
                 then acc
-                else (key, value) : acc
+                else (key, propValue) : acc
       )
       []
 
