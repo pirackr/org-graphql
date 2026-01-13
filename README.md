@@ -13,6 +13,7 @@ GraphQL backend for Org-mode data.
 
 - `ORG_BACKEND_ORG_DIR`: directory containing `.org` files. Defaults to `org/`.
 - `ORG_BACKEND_TOKEN`: if set, every GraphQL request must include an auth token.
+- `PORT`: port for the HTTP server (default: 8080).
 
 ## GraphQL queries
 
@@ -22,6 +23,11 @@ GraphQL backend for Org-mode data.
 - `orgFiles(recursive: Boolean = true, includeHidden: Boolean = false, prefix: String, offset: Int, limit: Int, sort: NAME | MTIME, sortDirection: ASC | DESC, filterTags: [String!], filterTodo: String)`: list `.org` files under `ORG_BACKEND_ORG_DIR` with optional filtering/pagination; returns `{ total, items }`
 
 Errors are surfaced as GraphQL errors with the prefix `ORG_BACKEND:`.
+
+## HTTP usage
+
+Send POST requests to `http://localhost:8080/` with a JSON body containing `query` (and optional `variables`).
+If `ORG_BACKEND_TOKEN` is set, pass `Authorization: Bearer <token>` and the server will inject it into the GraphQL request body.
 
 ## GraphQL mutations
 
