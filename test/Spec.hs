@@ -1,6 +1,7 @@
 module Main (main) where
 
 import qualified Api.GraphQL as GraphQL
+import qualified Api.HttpSpec
 import Control.Exception (bracket_)
 import Control.Monad (when)
 import Data.ByteString.Lazy.Char8 (pack, unpack)
@@ -15,6 +16,7 @@ import Test.Hspec
 main :: IO ()
 main = hspec $ do
   Org.ParserSpec.spec
+  Api.HttpSpec.spec
   describe "OrgBackend.hello" $ do
     it "returns a greeting" $ do
       OrgBackend.hello `shouldBe` "hello"
