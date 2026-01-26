@@ -18,7 +18,8 @@ spec = do
         `shouldBe`
           Right
             ( OrgFile
-                { orgFileHeadlines =
+                { orgFilePreamble = []
+                , orgFileHeadlines =
                     [ OrgHeadline
                         { headlineId = "hello"
                         , headlineLevel = 1
@@ -40,7 +41,8 @@ spec = do
         `shouldBe`
           Right
             ( OrgFile
-                { orgFileHeadlines =
+                { orgFilePreamble = []
+                , orgFileHeadlines =
                     [ OrgHeadline
                         { headlineId = "hello"
                         , headlineLevel = 1
@@ -62,7 +64,8 @@ spec = do
         `shouldBe`
           Right
             ( OrgFile
-                { orgFileHeadlines =
+                { orgFilePreamble = []
+                , orgFileHeadlines =
                     [ OrgHeadline
                         { headlineId = "hello"
                         , headlineLevel = 1
@@ -84,7 +87,8 @@ spec = do
         `shouldBe`
           Right
             ( OrgFile
-                { orgFileHeadlines =
+                { orgFilePreamble = []
+                , orgFileHeadlines =
                     [ OrgHeadline
                         { headlineId = "hello"
                         , headlineLevel = 1
@@ -106,7 +110,8 @@ spec = do
         `shouldBe`
           Right
             ( OrgFile
-                { orgFileHeadlines =
+                { orgFilePreamble = []
+                , orgFileHeadlines =
                     [ OrgHeadline
                         { headlineId = "hello"
                         , headlineLevel = 1
@@ -128,7 +133,8 @@ spec = do
         `shouldBe`
           Right
             ( OrgFile
-                { orgFileHeadlines =
+                { orgFilePreamble = []
+                , orgFileHeadlines =
                     [ OrgHeadline
                         { headlineId = "hello"
                         , headlineLevel = 1
@@ -150,7 +156,8 @@ spec = do
         `shouldBe`
           Right
             ( OrgFile
-                { orgFileHeadlines =
+                { orgFilePreamble = []
+                , orgFileHeadlines =
                     [ OrgHeadline
                         { headlineId = "hello"
                         , headlineLevel = 1
@@ -172,7 +179,8 @@ spec = do
         `shouldBe`
           Right
             ( OrgFile
-                { orgFileHeadlines =
+                { orgFilePreamble = []
+                , orgFileHeadlines =
                     [ OrgHeadline
                         { headlineId = "parent"
                         , headlineLevel = 1

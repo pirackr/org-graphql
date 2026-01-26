@@ -34,29 +34,31 @@ data HeadlineBuilder = HeadlineBuilder
 
 parseOrgText :: Text -> Either Text OrgFile
 parseOrgText input = do
-  (rootsRev, stack, inProps) <- foldl parseLine (Right ([], [], False)) (Text.lines input)
+  (preambleRev, rootsRev, stack, inProps) <- foldl parseLine (Right ([], [], [], False)) (Text.lines input)
   let (finalRootsRev, finalStack) = closeUntil 0 (rootsRev, stack)
       roots = reverse finalRootsRev
+      preamble = reverse preambleRev
   if inProps
     then Left "Unclosed property drawer"
     else
       if null finalStack
-        then pure (OrgFile roots)
+        then pure (OrgFile preamble roots)
         else Left "Unclosed headlines"
   where
     parseLine acc line = do
-      (rootsRev, stack, inProps) <- acc
+      (preambleRev, rootsRev, stack, inProps) <- acc
       let lineStart = Text.stripStart line
           lineTrimmed = Text.strip line
       if inProps
         then
           if lineTrimmed == ":END:"
-            then Right (rootsRev, stack, False)
+            then Right (preambleRev, rootsRev, stack, False)
             else case parseOnly propertyParser lineTrimmed of
               Left err -> Left (Text.pack err)
               Right prop ->
                 Right
-                  ( rootsRev
+                  ( preambleRev
+                  , rootsRev
                   , updateTop stack (\b -> b {hbProperties = insertProperty prop (hbProperties b)})
                   , True
                   )
@@ -64,33 +66,41 @@ parseOrgText input = do
           if lineTrimmed == ":PROPERTIES:"
             then
               if null stack
-                then Right (rootsRev, stack, False)
-                else Right (rootsRev, stack, True)
+                then Right (line : preambleRev, rootsRev, stack, False)
+                else Right (preambleRev, rootsRev, stack, True)
             else
               if Text.isPrefixOf "SCHEDULED:" lineTrimmed
-                then case parseOnly scheduledParser lineTrimmed of
-                  Left err -> Left (Text.pack err)
-                  Right scheduled ->
-                    Right
-                      ( rootsRev
-                      , updateTop stack (\b -> b {hbScheduled = Just scheduled})
-                      , False
-                      )
+                then
+                  if null stack
+                    then Right (line : preambleRev, rootsRev, stack, False)
+                    else case parseOnly scheduledParser lineTrimmed of
+                      Left err -> Left (Text.pack err)
+                      Right scheduled ->
+                        Right
+                          ( preambleRev
+                          , rootsRev
+                          , updateTop stack (\b -> b {hbScheduled = Just scheduled})
+                          , False
+                          )
                 else case parseOnly headlineParser lineStart of
                   Right headline ->
                     let level = headlineLevel headline
                         builder = toBuilder headline
                         (rootsRev', stack') = closeUntil level (rootsRev, stack)
-                     in Right (rootsRev', builder : stack', False)
+                     in Right (preambleRev, rootsRev', builder : stack', False)
                   Left err ->
                     if Text.isPrefixOf "*" lineStart
                       then Left (Text.pack err)
                       else
-                        Right
-                          ( rootsRev
-                          , updateTop stack (\b -> b {hbBodyRev = line : hbBodyRev b})
-                          , False
-                          )
+                        if null stack
+                          then Right (line : preambleRev, rootsRev, stack, False)
+                          else
+                            Right
+                              ( preambleRev
+                              , rootsRev
+                              , updateTop stack (\b -> b {hbBodyRev = line : hbBodyRev b})
+                              , False
+                              )
 
 headlineParser :: Parser OrgHeadline
 headlineParser = do

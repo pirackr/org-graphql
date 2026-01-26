@@ -8,7 +8,8 @@ import Data.Map.Strict (Map)
 import Data.Text (Text)
 
 data OrgFile = OrgFile
-  { orgFileHeadlines :: [OrgHeadline]
+  { orgFilePreamble :: [Text]
+  , orgFileHeadlines :: [OrgHeadline]
   }
   deriving (Eq, Show)
 

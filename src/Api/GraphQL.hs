@@ -873,8 +873,9 @@ deleteHeadlineInHeadlines targetId = go
 
 renderOrgFile :: OrgTypes.OrgFile -> Text
 renderOrgFile orgFile =
-  let lines = concatMap renderHeadline (OrgTypes.orgFileHeadlines orgFile)
-   in Text.unlines lines
+  let preambleLines = OrgTypes.orgFilePreamble orgFile
+      headlineLines = concatMap renderHeadline (OrgTypes.orgFileHeadlines orgFile)
+   in Text.unlines (preambleLines ++ headlineLines)
 
 renderHeadline :: OrgTypes.OrgHeadline -> [Text]
 renderHeadline headline =
