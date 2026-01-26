@@ -85,6 +85,22 @@ main = hspec $ do
             content <- readFile filePath
             content `shouldBe` "* Updated\n"
 
+    it "preserves startup options when updating headlines" $ do
+      let query =
+            "{\"authorization\":\"Bearer secret\",\"query\":\"mutation { updateHeadlineTitle(path: \\\"mutation-headline-startup.org\\\", id: \\\"hello\\\", title: \\\"Updated\\\") }\"}"
+          filePath = "test/fixtures/mutation-headline-startup.org"
+          cleanup = do
+            exists <- doesFileExist filePath
+            when exists (removeFile filePath)
+      bracket_ cleanup cleanup $
+        bracket_ (setEnv "ORG_BACKEND_ORG_DIR" "test/fixtures") (unsetEnv "ORG_BACKEND_ORG_DIR") $
+          bracket_ (setEnv "ORG_BACKEND_TOKEN" "secret") (unsetEnv "ORG_BACKEND_TOKEN") $ do
+            writeFile filePath "#+STARTUP: overview\n* Hello\n"
+            result <- GraphQL.execute (pack query)
+            unpack result `shouldBe` "{\"data\":{\"updateHeadlineTitle\":true}}"
+            content <- readFile filePath
+            content `shouldBe` "#+STARTUP: overview\n* Updated\n"
+
     it "returns errors when headline id is missing for mutation" $ do
       let query =
             "{\"authorization\":\"Bearer secret\",\"query\":\"mutation { updateHeadlineTitle(path: \\\"mutation-headline-missing.org\\\", id: \\\"missing\\\", title: \\\"Updated\\\") }\"}"
